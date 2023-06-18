@@ -4,14 +4,14 @@
 //|                                       http://www.companyname.net |
 //+------------------------------------------------------------------+
 struct sGlobal {
-   int   RoomFocus;
+   int               RoomFocus;
 };
 sGlobal   Global = {1};
 
 struct sChart {
-   int   EventBreak_R;
-   int   EventBreak_A;
-   int   EventBreak_B;
+   int               EventBreak_R;
+   int               EventBreak_A;
+   int               EventBreak_B;
 };
 sChart Chart = {-1, -1, -1};
 //+------------------------------------------------------------------+
@@ -27,19 +27,13 @@ double BBand_getValue_Result[1][3];
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
-bool  BBand_getValue(int vPeriod_)
+bool  BBand_getValue(ENUM_TIMEFRAMES   timeframe, int vPeriod_, double  BB_Deviation, ENUM_APPLIED_PRICE BB_Applied_price)
 {
-   string            symbol      = NULL;      // symbol
-   ENUM_TIMEFRAMES   timeframe   = exBB_TF;      // timeframe
-
-
-
-
    int          shift = Global.RoomFocus;           // shift
 
-   BBand_getValue_Result[0][MODE_MAIN]  = iBands(symbol, timeframe, vPeriod_, exBB_Deviation, exBB_BandsShift, exBB_Applied_price, MODE_MAIN, shift);
-   BBand_getValue_Result[0][MODE_UPPER] = iBands(symbol, timeframe, vPeriod_, exBB_Deviation, exBB_BandsShift, exBB_Applied_price, MODE_UPPER, shift);
-   BBand_getValue_Result[0][MODE_LOWER] = iBands(symbol, timeframe, vPeriod_, exBB_Deviation, exBB_BandsShift, exBB_Applied_price, MODE_LOWER, shift);
+   BBand_getValue_Result[0][MODE_MAIN]  = iBands(NULL, timeframe, vPeriod_, BB_Deviation, exBB_BandsShift, BB_Applied_price, MODE_MAIN, shift);
+   BBand_getValue_Result[0][MODE_UPPER] = iBands(NULL, timeframe, vPeriod_, BB_Deviation, exBB_BandsShift, BB_Applied_price, MODE_UPPER, shift);
+   BBand_getValue_Result[0][MODE_LOWER] = iBands(NULL, timeframe, vPeriod_, BB_Deviation, exBB_BandsShift, BB_Applied_price, MODE_LOWER, shift);
 
 
    BBand_getValue_Result[0][MODE_MAIN] = NormalizeDouble(BBand_getValue_Result[0][MODE_MAIN], Digits);
@@ -53,7 +47,7 @@ bool  BBand_getValue(int vPeriod_)
 //+------------------------------------------------------------------+
 int   BBand_EventBreak()
 {
-   if(BBand_getValue(exBB_A_Period)) {
+   if(BBand_getValue(exBB_TF, exBB_A_Period, exBB_Deviation_A, exBB_Applied_price_A)) {
       int res = ArrayCopy(BBand_A, BBand_getValue_Result);
       Print(__LINE__, "# BBand_getValue(A): ", exBB_A_Period);
       Print(__LINE__, "# ", "BBand_getValue(A,MODE_LOWER): ", BBand_A[0][MODE_LOWER]);
@@ -61,35 +55,49 @@ int   BBand_EventBreak()
       Print(__LINE__, "# ", "BBand_getValue(A,MODE_MAIN): ",  BBand_A[0][MODE_MAIN]);
    }
 
-   if(BBand_getValue(exBB_B_Period)) {
+   if(BBand_getValue(exBB_TF, exBB_B_Period, exBB_Deviation_B, exBB_Applied_price_B)) {
       int res = ArrayCopy(BBand_B, BBand_getValue_Result);
       Print(__LINE__, "# BBand_getValue(B): ", exBB_B_Period);
       Print(__LINE__, "# ", "BBand_getValue(B,MODE_LOWER): ", BBand_B[0][MODE_LOWER]);
       Print(__LINE__, "# ", "BBand_getValue(B,MODE_UPPER): ", BBand_B[0][MODE_UPPER]);
       Print(__LINE__, "# ", "BBand_getValue(B,MODE_MAIN): ",  BBand_B[0][MODE_MAIN]);
    }
-   //---
+//---
    {
       double _Close = NormalizeDouble(iClose(NULL, exBB_TF, Global.RoomFocus), Digits);
       double __Open = NormalizeDouble(iOpen(NULL, exBB_TF, Global.RoomFocus), Digits);
       Print(__LINE__, "# ", "_Close: ",  _Close);
       Print(__LINE__, "# ", "__Open: ",  __Open);
 
+      double _High = (exBB_PriceTest == ENUM_BB_CloseClose) ?
+                     _Close :
+                     NormalizeDouble(iHigh(NULL, exBB_TF, Global.RoomFocus), Digits);
+      double _Low  = (exBB_PriceTest == ENUM_BB_CloseClose) ?
+                     _Close :
+                     NormalizeDouble(iLow(NULL, exBB_TF, Global.RoomFocus), Digits);
+
       Chart.EventBreak_R = -1;
       Chart.EventBreak_A = -1;
       Chart.EventBreak_B = -1;
 
       {
+         int   BAR_TYPE = -1;
+         {
+            if(__Open < _Close)
+               BAR_TYPE = OP_BUY;
+            if(__Open > _Close)
+               BAR_TYPE = OP_SELL;
+         }
          {
             bool IsStand_A = true;
 
             if(IsStand_A) {
                Print(__LINE__, "# ");
-               if(_Close > BBand_A[0][MODE_UPPER] && _Close > BBand_A[0][MODE_MAIN]) {
+               if(_High > BBand_A[0][MODE_UPPER] && _Close > BBand_A[0][MODE_MAIN] && BAR_TYPE == OP_BUY) {
                   Chart.EventBreak_A = OP_SELL;
                   Print(__LINE__, "# ");
                }
-               if(_Close < BBand_A[0][MODE_LOWER] && _Close < BBand_A[0][MODE_MAIN]) {
+               if(_Low < BBand_A[0][MODE_LOWER] && _Close < BBand_A[0][MODE_MAIN] && BAR_TYPE == OP_SELL ) {
                   Chart.EventBreak_A = OP_BUY;
                   Print(__LINE__, "# ");
                }
@@ -101,11 +109,11 @@ int   BBand_EventBreak()
 
             if(IsStand_B) {
                Print(__LINE__, "# ");
-               if(_Close > BBand_B[0][MODE_UPPER] && _Close > BBand_B[0][MODE_MAIN]) {
+               if(_High > BBand_B[0][MODE_UPPER] && _Close > BBand_B[0][MODE_MAIN] && BAR_TYPE == OP_BUY) {
                   Chart.EventBreak_B = OP_SELL;
                   Print(__LINE__, "# ");
                }
-               if(_Close < BBand_B[0][MODE_LOWER] && _Close < BBand_B[0][MODE_MAIN]) {
+               if(_Low < BBand_B[0][MODE_LOWER] && _Close < BBand_B[0][MODE_MAIN] && BAR_TYPE == OP_SELL) {
                   Chart.EventBreak_B = OP_BUY;
                   Print(__LINE__, "# ");
                }
@@ -153,6 +161,73 @@ bool              IsNewBar()
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
+int   cIsNewBar_Save_Insert = -1;
+bool              IsNewBar_Insert()
+{
+   int getBar = iBars(NULL, exOrder_InsertTF);
+
+   if(cIsNewBar_Save_Insert != getBar) {
+
+      if(cIsNewBar_Save_Insert == -1) {
+         cIsNewBar_Save_Insert = getBar;
+         return   false;
+      }
+
+      cIsNewBar_Save_Insert = getBar;
+      if(cIsNewBar_Save_Insert != -1)
+         return   true;
+
+   }
+
+   return   false;
+}
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+enum ENUM_BandSize {
+   ENUM_BandSize_BandMid,     //Band Mid
+   ENUM_BandSize_BidMid,      //Bid Mid
+   ENUM_BandSize_ProductMid,  //Product Mid
+};
+extern   ENUM_BandSize  BandSize_Mode = ENUM_BandSize_BandMid;
+//---
+int  BBand_getBandSize(ENUM_TIMEFRAMES   timeframe, int vPeriod_, double  BB_Deviation, ENUM_APPLIED_PRICE BB_Applied_price,
+                       double   PortHold_Product)
+{
+   double BandSize[1][3];
+   
+   if(BBand_getValue(timeframe, vPeriod_, BB_Deviation, BB_Applied_price)) {
+      int res = ArrayCopy(BandSize, BBand_getValue_Result);
+
+      double res_   =  -1;
+
+      if(BandSize_Mode == ENUM_BandSize_BandMid) {
+         res_   =  (BandSize[0][MODE_UPPER] - BandSize[0][MODE_MAIN]) / Point;
+      }
+
+      if(BandSize_Mode == ENUM_BandSize_BidMid) {
+         res_   =  MathAbs((Bid - BandSize[0][MODE_MAIN]) / Point);
+      }
+
+      if(BandSize_Mode == ENUM_BandSize_ProductMid) {
+         res_   =  MathAbs((PortHold_Product - BandSize[0][MODE_MAIN]) / Point);
+
+
+         Print(__FUNCSIG__, __LINE__, "# ", "PortHold_Product:* ",  Chart.EventBreak_R);
+         Print(__FUNCSIG__, __LINE__, "# ", "BandSize[0][MODE_MAIN]:* ",  BandSize[0][MODE_MAIN]);
+         Print(__FUNCSIG__, __LINE__, "# ", "res_:* ",  res_);
+
+
+      }
+
+      return  int(NormalizeDouble(res_, 0));
+
+   }
+   return   1;
+}
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
 bool  OrderModifys_Profit(int  OP, int  cnt)
 {
    if(!exProfit_TP) {
@@ -162,21 +237,24 @@ bool  OrderModifys_Profit(int  OP, int  cnt)
    Print(__FUNCSIG__, __LINE__, "# ", "cnt: ", cnt);
    double   __TP_New = -1;
 
-   double   _Profit_TP_Point = double(exProfit_TP_Point);
-   if(eaIsTP_DivByCnt) {
-      double   Rate = 0.5;
-      double   Div = MathPow(Rate, cnt - 1);
-      _Profit_TP_Point = double(exProfit_TP_Point) * Div;
-   }
 
-   Print(__FUNCSIG__, __LINE__, "# ", "_Profit_TP_Point: ", NormalizeDouble(_Profit_TP_Point, 0));
+   double   _Profit_TP_Point = double(__Profit_TP_Point);
    {
-      if(_Profit_TP_Point <= 0) {
-         _Profit_TP_Point = 1;
-         Print(__FUNCSIG__, __LINE__, "# ", "_Profit_TP_Point <= 0: ", _Profit_TP_Point);
+      if(eaIsTP_DivByCnt) {
+         double   Rate = exProfit_TP_PointReduceRate_CNT;
+         double   Div = MathPow(Rate, cnt - 1);
+         _Profit_TP_Point = double(_Profit_TP_Point) * Div;
       }
-      _Profit_TP_Point = _Profit_TP_Point * Point;
 
+      Print(__FUNCSIG__, __LINE__, "# ", "_Profit_TP_Point: ", NormalizeDouble(_Profit_TP_Point, 0));
+      {
+         if(_Profit_TP_Point <= 0) {
+            _Profit_TP_Point = 1;
+            Print(__FUNCSIG__, __LINE__, "# ", "_Profit_TP_Point <= 0: ", _Profit_TP_Point);
+         }
+         _Profit_TP_Point = _Profit_TP_Point * Point;
+
+      }
    }
 
 
@@ -196,7 +274,7 @@ bool  OrderModifys_Profit(int  OP, int  cnt)
 
    Print(__FUNCSIG__, __LINE__, "# ", "__TP_New: ", __TP_New);
    Draw_HLine(OP_BUY, __TP_New, clrLime, "__TP_New");
-   //---
+//---
 
    int   __OrdersTotal   =  OrdersTotal();
    for(int icnt = 0; icnt < __OrdersTotal; icnt++) {

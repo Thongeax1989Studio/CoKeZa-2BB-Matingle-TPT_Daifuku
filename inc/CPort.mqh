@@ -19,6 +19,7 @@ public:
    double               ActivePlace_TOP, ActivePlace_BOT;
    int                  ActivePoint_TOP, ActivePoint_BOT;
    //---
+   datetime             Older_Lasted;
 
                      CPort(void)
    {
@@ -58,8 +59,10 @@ public:
       ActivePoint_TOP = 0;
       ActivePoint_BOT = 0;
       //---
-   }
 
+      Older_Lasted = 0;
+   }
+//---
    struct sTPT {
 
       int            Counter_Standby,  Counter_Runner_;
@@ -69,6 +72,8 @@ public:
       int            State;         // 0: Start/Normal,  1: TialingRuner
       bool           FoceModify;
       double         Price_SL;
+
+      bool           IsPrice_FixTP;
 
       void           Clear()
       {
@@ -81,10 +86,27 @@ public:
 
          State = -1;       // 0: Start/Normal,  1: TialingRuner
          FoceModify = false;
+
+         IsPrice_FixTP  =  true;
       }
    };
    sTPT              TPT_Buy;
    sTPT              TPT_Sell;
+//---
+
+   struct sOlder {
+      datetime       Frist;
+      datetime       Last;
+
+      void           Clear()
+      {
+         Frist = 99999999999999999;
+         Last  = 0;
+      }
+   };
+   sOlder              Older_Buy;
+   sOlder              Older_Sell;
+//---
 
    void              Calculator()
    {
@@ -95,6 +117,10 @@ public:
          {
             TPT_Buy.Clear();
             TPT_Sell.Clear();
+         }
+         {
+            Older_Buy.Clear();
+            Older_Sell.Clear();
          }
 
          int   __OrdersTotal   =  OrdersTotal();
@@ -125,7 +151,6 @@ public:
                   sumLot_All += OrderLots();
 
                   sumHold_Buy += OrderProfit() + OrderCommission() + OrderSwap();
-
                   {
                      /* Check SL */
                      double   _OrderStopLoss = OrderStopLoss();
@@ -143,7 +168,6 @@ public:
                               TPT_Buy.Eq_Runner_   =  false;
                            }
                         }
-
                      }
                      if(_OrderStopLoss == 0) {
                         //Standby
@@ -151,8 +175,18 @@ public:
                      }
 
                   }
+                  {
+                     double   _OrderTakeProfit   =  OrderTakeProfit();
+                     if(_OrderTakeProfit == 0) {
+                        TPT_Buy.IsPrice_FixTP = false;
+                     }
 
+                  }
+                  {
+                     Older_Buy.Last = MathMax(Older_Buy.Last, OrderOpenTime());
+                  }
                }
+
 
                if(OrderType_ == OP_BUYSTOP || OrderType_ == OP_BUYLIMIT) {
                   cnt_BuyPen++;
@@ -168,10 +202,10 @@ public:
                   sumLot_All += OrderLots();
 
                   sumHold_Sel += OrderProfit() + OrderCommission() + OrderSwap();
-
                   {
                      /* Check SL */
                      double   _OrderStopLoss = OrderStopLoss();
+
                      if(_OrderStopLoss != 0) {
                         //Runner
 
@@ -194,7 +228,16 @@ public:
                      }
 
                   }
+                  {
+                     double   _OrderTakeProfit   =  OrderTakeProfit();
+                     if(_OrderTakeProfit == 0) {
+                        TPT_Sell.IsPrice_FixTP = false;
+                     }
 
+                  }
+                  {
+                     Older_Sell.Last = MathMax(Older_Sell.Last, OrderOpenTime());
+                  }
                }
 
                if(OrderType_ == OP_SELLSTOP || OrderType_ == OP_SELLLIMIT) {
@@ -203,7 +246,6 @@ public:
 
             }
          }
-
          //---
          {
             /* v1.64 */
@@ -217,17 +259,17 @@ public:
                Draw_SumProduct(5, ActivePlace_BOT, clrYellow, "_ActivePlace_BOT");
 
 
-               double   RimInsert = (exOrder_InDistancePoint_Get () * Point) * -1;
+               double   RimInsert = (exOrder_InDistancePoint_Get() * Point) * -1;
 
                if(cnt_Sel > 0) {
                   Point_Distance = ActivePoint_TOP;
 
-                  Draw_SumProduct(5, ActivePlace_TOP + RimInsert, clrSlateBlue, "_ActivePlace_TOP_RimInsert");
+                  Draw_SumProduct(5, ActivePlace_TOP + RimInsert, clrTan, "_ActivePlace_TOP_RimInsert");
                }
                if(cnt_Buy > 0) {
                   Point_Distance = ActivePoint_BOT;
 
-                  Draw_SumProduct(5, ActivePlace_BOT - RimInsert, clrSlateBlue, "_ActivePlace_BOT_RimInsert");
+                  Draw_SumProduct(5, ActivePlace_BOT - RimInsert, clrTan, "_ActivePlace_BOT_RimInsert");
                }
 
             } else {
@@ -267,7 +309,6 @@ public:
          //--
 
          sumHold_All = sumHold_Buy + sumHold_Sel;
-
 
          {/* Profit taillng */
 
@@ -331,6 +372,12 @@ public:
             }
 
          }
+
+         {
+
+            Older_Lasted = MathMax(Older_Buy.Last, Older_Sell.Last);
+
+         }
       }
    }
 private:
@@ -374,6 +421,11 @@ bool  OrderSend_Active(int OP_Commander, int CountOfHold)
       return   false;
    } else
       Print("OrderSend placed successfully");
+
+   Port.Calculator();
+
+   Profit_Endure.Season_Maker(Port.Older_Lasted);
+
    return   true;
 }
 //+------------------------------------------------------------------+
@@ -385,7 +437,7 @@ double   getOrder_LotStart()
       return NormalizeDouble(exOrder_LotStart, 2);
    }
 
-   double   rate  =  AccountInfoDouble(ACCOUNT_BALANCE) / exCapitalValue;
+   double   rate  =  AccountInfoDouble(ACCOUNT_BALANCE) / eaCapital;
    rate = rate - MathMod(rate, 1);
 
    return NormalizeDouble(exOrder_LotStart * rate, 2);
@@ -393,7 +445,7 @@ double   getOrder_LotStart()
 //+------------------------------------------------------------------+
 //|                                                                  |
 //+------------------------------------------------------------------+
-bool  OrderModifys_SL(int  OP)
+bool  OrderModifys_SL(int  OP, double  PortSL_Price = -1)
 {
    if(!exProfit_Tail) {
       return   exProfit_Tail;
@@ -403,18 +455,27 @@ bool  OrderModifys_SL(int  OP)
 
    double   __SL_New = -1;
    if(OP == OP_BUY) {
-      __SL_New   = NormalizeDouble(Bid - (exProfit_Tail_Point * Point), Digits);
+      __SL_New   = NormalizeDouble(Bid - (Tailing.Tail_Point * Point), Digits);
+
+      if(PortSL_Price != -1 && __SL_New < PortSL_Price) {
+         return   false;
+      }
 
       if(Port.sumProd_Buy > __SL_New) {
          return   false;
       }
       Draw_HLine(OP_BUY, Bid, clrWhite, "SL_New*Bid");
    } else {
-      __SL_New   = NormalizeDouble(Ask + (exProfit_Tail_Point * Point), Digits);
+      __SL_New   = NormalizeDouble(Ask + (Tailing.Tail_Point * Point), Digits);
+
+      if(PortSL_Price != -1 && __SL_New > PortSL_Price) {
+         return   false;
+      }
 
       if(Port.sumProd_Sel < __SL_New) {
          return   false;
       }
+
       Draw_HLine(OP_SELL, Ask, clrWhite, "SL_New*Ask");
    }
 //---
@@ -450,8 +511,25 @@ bool  OrderModifys_SL(int  OP)
 //+------------------------------------------------------------------+
 int   exOrder_InDistancePoint_Get(int  OrederCNT = 0)
 {
-   double   res   = exOrder_InDistancePoint;// * MathPow(1.15, OrederCNT);
-   return   int(res * -1);
+   double   res_   = exOrder_InDistancePoint;// * MathPow(1.15, OrederCNT);
+
+   if(exIn_BB) {
+
+      double BandSize[1][3];
+      if(BBand_getValue(exIn_BB_TF, exIn_Period, exIn_Deviation, exIn_Applied_price)) {
+         int res = ArrayCopy(BandSize, BBand_getValue_Result);
+
+         //double res_   =  -1;
+
+         if(exIn_PriceTest == ENUM_OrderInsertBB_MidBand) {
+            res_   =  (BandSize[0][MODE_UPPER] - BandSize[0][MODE_MAIN]) / Point;
+         }
+      }
+
+   }
+
+
+   return   int(res_ * -1);
 }
 //+------------------------------------------------------------------+
 //|                                                                  |
@@ -469,43 +547,5 @@ void  Draw_HLine(int OP, double Price, color Clr, string   name = "_SumProduct",
    }
    ObjectSet(ObjTag, OBJPROP_BACK, false);
    ObjectSet(ObjTag, OBJPROP_COLOR, Clr);
-}
-//+------------------------------------------------------------------+
-//|                                                                  |
-//+------------------------------------------------------------------+
-bool Order_Close(int OP_DIR)
-{
-   int   ORDER_TICKET_CLOSE[];
-   ArrayResize(ORDER_TICKET_CLOSE, OrdersTotal());
-   ArrayInitialize(ORDER_TICKET_CLOSE, EMPTY_VALUE);
-
-   for(int pos = 0; pos < OrdersTotal(); pos++) {
-      if(
-         (OrderSelect(pos, SELECT_BY_POS)) &&
-         (OrderSymbol() == Symbol()) &&
-         ((OP_DIR != -1 && OrderType() == OP_DIR) || (OP_DIR == -1)) &&
-         (OrderMagicNumber() == exMagicnumber)
-      ) {
-         ORDER_TICKET_CLOSE[pos] = OrderTicket();
-      }
-
-   }
-//---
-   for(int i = 0; i < ArraySize(ORDER_TICKET_CLOSE); i++) {
-      if(ORDER_TICKET_CLOSE[i] != EMPTY_VALUE) {
-         if(OrderSelect(ORDER_TICKET_CLOSE[i], SELECT_BY_TICKET) == true) {
-            //bool z=OrderDelete(OrderTicketClose[i]);
-            int MODE = (OrderType() == OP_BUY) ? MODE_BID : MODE_ASK;
-            bool z = OrderClose(OrderTicket(), OrderLots(), MarketInfo(OrderSymbol(), MODE), 10);
-            if(GetLastError() == 0) {
-               ORDER_TICKET_CLOSE[i] = EMPTY_VALUE;
-            } else {
-               return   false;
-            }
-         }
-      }
-   }
-   ArrayResize(ORDER_TICKET_CLOSE, 1);
-   return   true;
 }
 //+------------------------------------------------------------------+
